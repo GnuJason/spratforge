@@ -1,5 +1,7 @@
 {
   "name": "idle_6",
   "frames": 6,
-  "timing": "default"
+  "interpolation": "ease_in_out",
+  "motion": "idle",
+  "palette": "nes"
 }

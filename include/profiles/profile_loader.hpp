@@ -1,19 +1,25 @@
 #pragma once
 
-#include <map>
-#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
+
+#include "core/palette_core.hpp"
 
 namespace spratforge::profiles {
 
 struct AnimationProfile {
     std::string name;
     int frame_count = 0;
-    std::string timing;
-    std::map<std::string, std::string> metadata;
+    std::string interpolation;
+    std::string motion;
+    std::string palette_override;
 };
 
-std::optional<AnimationProfile> load_profile(std::string_view name);
+bool is_valid_interpolation(std::string_view interpolation);
+bool is_valid_motion(std::string_view motion);
+AnimationProfile load_profile(std::string_view profile_name);
+void apply_interpolation(std::vector<core::Frame>& frames, const AnimationProfile& profile);
+void apply_motion_hint(std::vector<core::Frame>& frames, const AnimationProfile& profile);
 
 }  // namespace spratforge::profiles

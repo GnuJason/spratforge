@@ -1,12 +1,21 @@
 #pragma once
 
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "core/palette_core.hpp"
+
 namespace spratforge::ai {
 
 struct MotionVector {
-    int x = 0;
-    int y = 0;
+    int dx = 0;
+    int dy = 0;
 };
 
-MotionVector quantize_motion(MotionVector motion, int pixels_per_unit);
+MotionVector parse_motion(const std::string& input);
+MotionVector quantize(const MotionVector& motion);
+void apply_motion(core::Frame& frame, const MotionVector& motion);
+void apply_motion_sequence(std::vector<core::Frame>& frames, const MotionVector& motion);
 
 }  // namespace spratforge::ai
