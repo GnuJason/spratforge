@@ -18,6 +18,8 @@ struct RenderOptions {
     std::optional<std::string> palette_mode;
 };
 
+bool load_frame_png(std::string_view input_path, Frame& frame, std::string& error);
+bool save_frame_png(const Frame& frame, std::string_view output_path, std::string& error);
 bool render_single_frame(const RenderOptions& options, std::string_view output_path, std::string& error);
 bool render_profile(const profiles::AnimationProfile& profile, const RenderOptions& options,
                     std::string_view output_directory, std::string& error);

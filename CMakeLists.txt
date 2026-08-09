@@ -45,10 +45,15 @@ endif()
 
 add_library(spratforge_core
     src/ai/ai_motion_core.cpp
+    src/anchor/anchor_core.cpp
     src/atlas/atlas_core.cpp
     src/core/palette_core.cpp
+    src/core/pixel_normalizer.cpp
     src/core/renderer_core.cpp
+    src/manifest/manifest_core.cpp
+    src/pipeline/pipeline_core.cpp
     src/profiles/profile_loader.cpp
+    src/templates/template_engine.cpp
 )
 target_include_directories(spratforge_core PUBLIC include)
 target_include_directories(spratforge_core SYSTEM PRIVATE "${spratgen_SOURCE_DIR}/stb")
@@ -56,6 +61,7 @@ target_include_directories(spratforge_core SYSTEM PUBLIC "${jsonnet_SOURCE_DIR}/
 target_compile_definitions(spratforge_core PRIVATE
     SPRATFORGE_PALETTE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/palettes"
     SPRATFORGE_PROFILE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/profiles"
+    SPRATFORGE_TEMPLATE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/profiles/templates"
 )
 target_link_libraries(spratforge_core PUBLIC spratgen::spratgen)
 
@@ -68,6 +74,7 @@ if(BUILD_TESTING)
         add_executable(${test_name} tests/${test_name}.cpp)
         target_link_libraries(${test_name} PRIVATE spratforge_core)
         add_test(NAME ${test_name} COMMAND ${test_name})
+        set_tests_properties(${test_name} PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
     endfunction()
 
     add_spratforge_test(test_golden_frame)
@@ -75,4 +82,9 @@ if(BUILD_TESTING)
     add_spratforge_test(test_palette)
     add_spratforge_test(test_atlas)
     add_spratforge_test(test_motion)
+    add_spratforge_test(test_anchor)
+    add_spratforge_test(test_templates)
+    add_spratforge_test(test_pixel_normalizer)
+    add_spratforge_test(test_manifest)
+    add_spratforge_test(test_pipeline)
 endif()

@@ -1,0 +1,5 @@
+{
+  "description": "Anchor data is generated deterministically from the source sprite.",
+  "alpha_threshold": 1,
+  "pivot": "bottom_center"
+}

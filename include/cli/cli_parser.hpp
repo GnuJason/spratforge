@@ -5,7 +5,7 @@
 
 namespace spratforge::cli {
 
-enum class Mode { single, profile, atlas, ai_motion };
+enum class Mode { single, profile, atlas, ai_motion, turnkey };
 
 struct Options {
     Mode mode;

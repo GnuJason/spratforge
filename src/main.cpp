@@ -7,6 +7,7 @@
 #include "cli/cli_parser.hpp"
 #include "core/renderer_core.hpp"
 #include "profiles/profile_loader.hpp"
+#include "pipeline/pipeline_core.hpp"
 
 int main(int argc, char* argv[]) {
     const auto result = spratforge::cli::parse_arguments(argc, argv);
@@ -79,6 +80,9 @@ int main(int argc, char* argv[]) {
             }
             break;
         }
+        case spratforge::cli::Mode::turnkey:
+            rendered = spratforge::pipeline::Pipeline{}.run(*options.input_path, options.output_path, error);
+            break;
     }
     if (!rendered) {
         std::cerr << error << '\n';

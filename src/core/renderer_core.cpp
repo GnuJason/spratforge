@@ -75,6 +75,14 @@ void enforce_palette_consistency(std::vector<Frame>& frames, const std::optional
 
 }  // namespace
 
+bool load_frame_png(std::string_view input_path, Frame& frame, std::string& error) {
+    return load_png(input_path, frame, error);
+}
+
+bool save_frame_png(const Frame& frame, std::string_view output_path, std::string& error) {
+    return write_png(frame, output_path, error);
+}
+
 Frame downsample_nearest(const Frame& source, int width, int height) {
     if (source.width <= 0 || source.height <= 0 || width <= 0 || height <= 0 || source.rgba.size() !=
             static_cast<std::size_t>(source.width) * static_cast<std::size_t>(source.height) * 4U) {

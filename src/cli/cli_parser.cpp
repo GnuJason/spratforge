@@ -41,7 +41,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
             options.verbose = true;
             continue;
         }
-        if (argument == "--mode" || argument == "--out" || argument == "--input" || argument == "--grid" ||
+        if (argument == "--mode" || argument == "--out" || argument == "--input" || argument == "--grid" || argument == "--turnkey" ||
             argument == "--profile" || argument == "--atlas" || argument == "--padding" || argument == "--palette" ||
             argument == "--motion") {
             if (++index >= argc) return {.error = "Missing value for " + std::string(argument)};
@@ -50,6 +50,10 @@ ParseResult parse_arguments(int argc, char* argv[]) {
                 const auto mode = parse_mode(value);
                 if (!mode) return {.error = "Invalid mode: " + value};
                 options.mode = *mode;
+                has_mode = true;
+            } else if (argument == "--turnkey") {
+                options.mode = Mode::turnkey;
+                options.input_path = value;
                 has_mode = true;
             } else if (argument == "--out") {
                 options.output_path = value;
@@ -109,7 +113,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
 }
 
 std::string usage() {
-        return "Usage: spratforge_cli --mode <single|profile|atlas|ai-motion> --out <path> "
+        return "Usage: spratforge_cli --turnkey <input.png> --out <output-directory> | --mode <single|profile|atlas|ai-motion> --out <path> "
             "[--input <png>] [--grid <width>x<height>] [--profile <name>] [--atlas <columns>x<rows>] [--padding <pixels>] "
             "[--palette <nes|gb|strict>] [--dither] [--motion <x,y>] [--verbose]";
 }
