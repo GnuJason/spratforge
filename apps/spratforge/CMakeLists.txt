@@ -1,69 +1,6 @@
-cmake_minimum_required(VERSION 3.20)
-
-project(spratforge VERSION 0.1.0 LANGUAGES CXX)
-cmake_minimum_required(VERSION 3.20)
-
-project(ringqueen LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-if(MSVC)
-    add_compile_options(/W4)
-else()
-    add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
-include(CTest)
-
-# spratforge consumes spratgen targets, so spratgen must be configured first.
-add_subdirectory(apps/spratgen)
-add_subdirectory(apps/spratforge)
-add_subdirectory(apps/ringqueen-engine)
-add_subdirectory(libs/rq-core)
-add_subdirectory(libs/rq-assets)
-add_subdirectory(libs/rq-ai)cmake_minimum_required(VERSION 3.20)
-
-project(spratforge VERSION 0.1.0 LANGUAGES CXX)
-
-include(FetchContent)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
 # spratforge itself does not provide export.hpp or json/json.hpp. export.hpp must be
 # exported by spratgen's public include directories. JSON is supplied either by an
 # installed jsoncpp package or by spratgen's exported Jsonnet third-party directory.
-# Set SPRATFORGE_USE_LOCAL_SPRATGEN=ON to use ../spratgen in offline or monorepo builds.
-option(SPRATFORGE_USE_LOCAL_SPRATGEN "Use local spratgen instead of FetchContent" OFF)
-set(SPRATGEN_GIT_REPOSITORY "https://github.com/GnuJason/sprat-cli.git" CACHE STRING
-    "Git repository URL for spratgen")
-set(SPRATGEN_GIT_TAG "main" CACHE STRING "Git tag/branch/commit for spratgen")
-set(SPRAT_DOWNLOAD_STB ON CACHE BOOL "Allow spratgen to download required stb headers")
-
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build libraries as shared" FORCE)
-
-if(SPRATFORGE_USE_LOCAL_SPRATGEN)
-    set(SPRATGEN_LOCAL_SOURCE_DIR "${PROJECT_SOURCE_DIR}/../spratgen" CACHE PATH
-        "Path to the local spratgen source tree")
-    if(NOT EXISTS "${SPRATGEN_LOCAL_SOURCE_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR
-            "SPRATFORGE_USE_LOCAL_SPRATGEN=ON requires a spratgen CMake project at "
-            "'${SPRATGEN_LOCAL_SOURCE_DIR}'. Set SPRATGEN_LOCAL_SOURCE_DIR to override the default ../spratgen path.")
-    endif()
-    set(spratgen_SOURCE_DIR "${SPRATGEN_LOCAL_SOURCE_DIR}")
-    add_subdirectory("${spratgen_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/spratgen")
-else()
-    FetchContent_Declare(spratgen
-        GIT_REPOSITORY ${SPRATGEN_GIT_REPOSITORY}
-        GIT_TAG ${SPRATGEN_GIT_TAG}
-        GIT_SUBMODULES ""
-    )
-    FetchContent_MakeAvailable(spratgen)
-    FetchContent_GetProperties(spratgen)
-endif()
 # spratgen is configured by the monorepo root from apps/spratgen before this file.
 if(NOT DEFINED spratgen_SOURCE_DIR)
     set(spratgen_SOURCE_DIR "${PROJECT_SOURCE_DIR}/apps/spratgen")
@@ -82,7 +19,7 @@ foreach(_candidate IN ITEMS spratgen_core spratgen_static spratcore spratgen)
 endforeach()
 
 if("${_spratgen_target}" STREQUAL "")
-    message(FATAL_ERROR "spratgen was fetched but no known library target was exported. Expected one of: spratgen_core, spratgen_static, spratcore, spratgen")
+    message(FATAL_ERROR "apps/spratgen did not export a known library target. Expected one of: spratgen_core, spratgen_static, spratcore, spratgen")
 endif()
 
 if(NOT TARGET spratgen::spratgen)
@@ -136,7 +73,7 @@ add_library(spratforge_core
     src/profiles/profile_loader.cpp
     src/templates/template_engine.cpp
 )
-target_include_directories(spratforge_core PUBLIC include)
+target_include_directories(spratforge_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_include_directories(spratforge_core SYSTEM PRIVATE "${spratgen_SOURCE_DIR}/stb")
 target_include_directories(spratforge_core SYSTEM PUBLIC ${_spratforge_json_include_dirs})
 target_compile_definitions(spratforge_core PRIVATE
@@ -152,7 +89,6 @@ endif()
 add_executable(spratforge_cli src/main.cpp src/cli/cli_parser.cpp)
 target_link_libraries(spratforge_cli PRIVATE spratforge_core spratgen::spratgen)
 
-include(CTest)
 if(BUILD_TESTING)
     function(add_spratforge_test test_name)
         add_executable(${test_name} tests/${test_name}.cpp)
