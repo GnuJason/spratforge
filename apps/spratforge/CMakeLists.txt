@@ -69,8 +69,12 @@ add_library(spratforge_core
     src/core/pixel_normalizer.cpp
     src/core/renderer_core.cpp
     src/manifest/manifest_core.cpp
+    src/motion/pose_renderer.cpp
     src/pipeline/pipeline_core.cpp
     src/profiles/profile_loader.cpp
+    src/rig/pixel_rig.cpp
+    src/rig/segmentation.cpp
+    src/rig/rig_validator.cpp
     src/templates/template_engine.cpp
 )
 target_include_directories(spratforge_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -107,4 +111,6 @@ if(BUILD_TESTING)
     add_spratforge_test(test_pixel_normalizer)
     add_spratforge_test(test_manifest)
     add_spratforge_test(test_pipeline)
+    add_spratforge_test(test_rig)
+    add_spratforge_test(test_pose_renderer)
 endif()
