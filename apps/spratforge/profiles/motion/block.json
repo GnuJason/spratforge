@@ -1,0 +1,1 @@
+{"profile_version":1,"name":"block","frames":5,"fps":10,"loop":false,"keyframes":[{"time":0,"transforms":[]},{"time":500,"transforms":[{"joint":"left_shoulder","dy":-2,"rotation":15},{"joint":"right_shoulder","dy":-2,"rotation":-15}]},{"time":1000,"transforms":[{"joint":"left_shoulder","dy":-2,"rotation":15},{"joint":"right_shoulder","dy":-2,"rotation":-15}]}]}

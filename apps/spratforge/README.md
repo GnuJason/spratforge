@@ -42,6 +42,110 @@ spratforge_cli --mode ai-motion --input source.png --grid 16x16 --motion 2,-1 --
 
 Rendering modes load an RGBA PNG, apply deterministic nearest-neighbor grid downsampling, optionally quantize to `nes`, `gb`, `strict`, or `dither` palettes, and write PNG output through spratgen.
 
+## Profile-driven generation (Phase 2)
+
+The new commands use the Phase 1 rig renderer with versioned JSON profiles. The
+existing `--mode` commands and `--turnkey` retain their previous behavior and
+metadata formats.
+
+```sh
+spratforge_cli generate --input boxer.png --out generated/boxer
+spratforge_cli generate --input boxer.png --out generated/blue --variant blue
+spratforge_cli rig-validate --rig generated/boxer/rig.json --out rig-report.json
+spratforge_cli audit --input boxer.png
+spratforge_cli audit --input generated/boxer --out audit-report.json
+```
+
+`generate` requires a nonexistent or empty output directory. It writes a global
+atlas, atlas metadata, manifest, original-coordinate rig, aligned anchor,
+individual animation frames, and per-animation sheets. The shipped motion set
+contains **45 frames** across `block`, `hit`, `idle`, `jab`, `ko`, `specials`, and
+`walk`, ordered by animation name. These are editable example motions, not a
+claim of production-ready animation for every silhouette.
+
+All three commands print a JSON object with `valid` and `diagnostics` to stdout.
+Diagnostics contain `code`, `path`, and `message`. Exit status is `0` for success,
+`2` for invalid command arguments, and `5` for validation or execution failure.
+Validators optionally write the same report using `--out`, refusing to overwrite
+existing files. `--help` displays command syntax. Unknown and duplicate options
+are rejected.
+
+### Profile selection
+
+`generate` accepts `--rig-profile`, `--motion-dir`, `--palette-profile`,
+`--export-profile`, `--variant`, `--rig`, and `--rig-override`. Paths select JSON
+files except `--motion-dir`, which loads all `.json` motion files in a directory.
+Defaults come from this application's `profiles/` directory. An explicit `--rig`
+loads a saved rig instead of inferring one. Profile overrides are applied first,
+then `--rig-override`; unlike legacy turnkey, generation does not auto-load
+source-adjacent sidecars.
+
+`rig-validate` accepts `--rig-profile` and `--rig-override`. `audit` accepts
+`--rig-profile` and `--palette-profile`; `--rig` is available for source-image
+audits, and `--export-profile` for output-directory audits. Supply the same custom
+profiles used during generation when auditing its output.
+
+Each profile requires integer `profile_version: 1`; unknown fields, invalid
+types, unsafe export filenames, and unsupported versions are rejected.
+
+| Profile | Default | Contract |
+| --- | --- | --- |
+| Rig | `profiles/rig/boxer_default.json` | Source dimension/color limits, transparency requirement, minimum joint confidence (0..1000), required nonempty regions, and rig overrides. |
+| Motion | `profiles/motion/*.json` | Name, frame count (1..1000), FPS (1..1000), loop flag, integer keyframes, optional durations, events, and hitboxes. |
+| Palette | `profiles/palette/boxer_default.json` | RGB source constraints, immutable color locks, region roles, ramps, variants, and animation styles. |
+| Export | `profiles/export/ringqueen.json` | Version 1 global grid, column count, padding, PNG/JSON filenames, and frame/sheet output toggles. |
+
+The sample `profiles/rig/boxer_override.json` is a raw rig override for
+`--rig-override`, not a versioned rig profile. Rig override structure remains the
+Phase 1 structure (`joints`, `bones`, `regions`, `pivot`).
+
+Motion keyframes use integer times from `0` to `1000`, including both endpoints.
+Transforms name joints and optionally set `dx`, `dy`, `rotation`, `scale_x`, and
+`scale_y`. Rotations use 15-degree increments; scales are integer percentages
+from 50 to 200. Interpolation supports `linear`, `ease_in`, `ease_out`,
+`ease_in_out`, and `smoothstep`. `durations_ms`, when present, supplies one
+positive integer duration per frame and overrides FPS-derived timing. Otherwise,
+durations use consecutive differences of `floor(frame * 1000 / fps)`.
+Events use animation-local zero-based `frame` and `name`. Optional authored
+hitboxes use `frame`, `x`, `y`, `w`, `h`, and `kind`.
+
+Palette colors are RGB triples. Empty `allowed_colors` preserves unrestricted
+source RGB; a nonempty list constrains visible source colors. `roles` maps role
+names to rig regions, `ramps` defines base colors, and `variants` maps variant
+names to replacement role ramps of equal length. Alternatively, `variants_file`
+loads a sibling versioned variants file. A selected variant maps each region's
+colors through its nearest base-ramp color. Locked source colors remain unchanged
+through variants and styles. `animation_styles` can enable `desaturate` or set
+an RGB `flash` for a whole animation; flash takes precedence. Output auditing
+allows source colors plus declared variant/style colors. The default variant is
+`default`; the supplied `blue` variant uses blue gloves and green trunks.
+
+### Versioned output metadata
+
+The Phase 2 atlas and manifest use `schema_version: 1`, `format: "ringqueen"`,
+`image`, `size`, grid dimensions/padding, `variant`, and a palette name plus the
+actual visible RGB set. Each frame has an index, atlas rectangle, frame-local
+`pivot`, and authoritative `duration_ms`, with optional `hitboxes`. Each animation
+has `name`, `first_frame`, `frame_count`, `fps`, `loop`, and local-frame `events`.
+Ranges are contiguous and cover all frames; the end index is exclusive
+(`first_frame + frame_count`). All frames share one canvas size and pivot.
+Hitboxes are authored coordinates relative to that pivot, as declared by
+`hitbox_space: "pivot_relative"`; they are not inferred from pixels or transformed
+automatically. The manifest also references the atlas JSON, rig, and anchor.
+
+Source audits check dimensions, binary alpha, visible content, transparency, and
+palette constraints, optionally comparing a supplied rig. Output audits check
+the global PNG and metadata, ranges, timing, pivots, palette, empty padding,
+manifest references, rig validity, and aligned anchor silhouette. They do not
+re-render animations or verify optional sheets/individual-frame files. Generation
+is bounded to 10,000 frames and 16,777,216 aggregate aligned frame pixels; the
+global atlas has the same pixel budget and an 8192-pixel dimension limit.
+I/O failures can leave partial output; use a fresh directory for retries.
+
+This is the exporter-side contract only. The shared RingQueen schema, runtime
+consumer, and asset-build integration belong to Phase 3 and are not implemented
+here. No Phase 3 compatibility claim is made by the `ringqueen` format label.
+
 ## AI motion
 
 AI motion mode applies a pixel-aligned translation described by `--motion x,y`, where both components are signed integers:

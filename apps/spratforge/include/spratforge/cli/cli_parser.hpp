@@ -2,10 +2,11 @@
 
 #include <optional>
 #include <string>
+#include <spratforge/profiles/generation_profiles.hpp>
 
 namespace spratforge::cli {
 
-enum class Mode { single, profile, atlas, ai_motion, turnkey };
+enum class Mode { single, profile, atlas, ai_motion, turnkey, generate, rig_validate, audit };
 
 struct Options {
     Mode mode;
@@ -19,6 +20,7 @@ struct Options {
     std::optional<std::string> motion_vector;
     bool dither = false;
     bool verbose = false;
+    profiles::ProfilePaths profiles;
 };
 
 struct ParseResult {

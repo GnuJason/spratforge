@@ -1,0 +1,1 @@
+{"profile_version":1,"name":"jab","frames":6,"fps":12,"loop":false,"keyframes":[{"time":0,"interpolation":"ease_out","transforms":[]},{"time":400,"transforms":[{"joint":"right_shoulder","dx":5,"dy":-1},{"joint":"torso","dx":1}]},{"time":1000,"transforms":[]}],"events":[{"frame":2,"name":"strike"}]}

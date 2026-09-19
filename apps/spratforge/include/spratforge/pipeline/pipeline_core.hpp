@@ -1,8 +1,11 @@
 #pragma once
 
 #include <string>
+#include <spratforge/profiles/generation_profiles.hpp>
 
 namespace spratforge::pipeline {
+bool generate(const std::string& sprite_path, const std::string& output_directory,
+              const profiles::ProfilePaths& paths, std::string& error);
 
 struct PipelineConfig {
     std::string template_directory;

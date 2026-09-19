@@ -1,0 +1,1 @@
+{"profile_version":1,"name":"ko","frames":8,"fps":8,"loop":false,"keyframes":[{"time":0,"interpolation":"ease_in","transforms":[]},{"time":1000,"transforms":[{"joint":"torso","rotation":90,"dy":8}]}],"events":[{"frame":7,"name":"down"}]}

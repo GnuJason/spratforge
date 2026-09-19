@@ -3,6 +3,7 @@
 #include <string>
 
 #include <spratforge/ai/ai_motion_core.hpp>
+#include <spratforge/audit/audit_core.hpp>
 #include <spratforge/atlas/atlas_core.hpp>
 #include <spratforge/cli/cli_parser.hpp>
 #include <spratforge/core/renderer_core.hpp>
@@ -10,13 +11,48 @@
 #include <spratforge/pipeline/pipeline_core.hpp>
 
 int main(int argc, char* argv[]) {
+    const bool modern = argc > 1 && (std::string(argv[1]) == "generate" || std::string(argv[1]) == "rig-validate" || std::string(argv[1]) == "audit");
+    if ((argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) ||
+        (modern && argc == 3 && (std::string(argv[2]) == "--help" || std::string(argv[2]) == "-h"))) {
+        std::cout << spratforge::cli::usage() << '\n';
+        return 0;
+    }
     const auto result = spratforge::cli::parse_arguments(argc, argv);
     if (!result.options) {
-        std::cerr << result.error << '\n';
+        if (modern) std::cout << spratforge::rig::diagnostics_json({{"arguments", "cli", result.error}}).dump(2) << '\n';
+        else std::cerr << result.error << '\n';
         return 2;
     }
 
     const auto& options = *result.options;
+    if (modern) {
+        auto report = spratforge::rig::diagnostics_json({});
+        try {
+            if (options.mode == spratforge::cli::Mode::generate) {
+                std::string error;
+                if (!spratforge::pipeline::generate(*options.input_path, options.output_path, options.profiles, error)) {
+                    report = spratforge::rig::diagnostics_json({{"generate_failed", "generate", error}});
+                }
+            } else {
+                report = options.mode == spratforge::cli::Mode::rig_validate
+                    ? spratforge::audit::validate_rig_file(options.profiles.rig_file, options.profiles)
+                    : spratforge::audit::audit_path(*options.input_path, options.profiles);
+                if (!options.output_path.empty()) {
+                    const auto destination = std::filesystem::weakly_canonical(options.output_path);
+                    for (const auto& input : {options.input_path.value_or(""), options.profiles.rig_file, options.profiles.rig,
+                        options.profiles.rig_override, options.profiles.palette, options.profiles.export_profile}) {
+                        if (!input.empty() && destination == std::filesystem::weakly_canonical(input)) throw std::invalid_argument("Diagnostic output cannot overwrite an input");
+                    }
+                    if (std::filesystem::exists(destination)) throw std::invalid_argument("Diagnostic output already exists");
+                    spratforge::atlas::save_metadata_json(options.output_path, report);
+                }
+            }
+        } catch (const std::exception& error) {
+            report = spratforge::rig::diagnostics_json({{"command_failed", "cli", error.what()}});
+        }
+        std::cout << report.dump(2) << '\n';
+        return report.at("valid").get<bool>() ? 0 : 5;
+    }
     spratforge::core::RenderOptions render_options{.input_path = options.input_path.value_or("")};
     if (options.grid_dimensions) {
         const auto grid = spratforge::atlas::parse_atlas_dimensions(*options.grid_dimensions);
@@ -83,6 +119,10 @@ int main(int argc, char* argv[]) {
         case spratforge::cli::Mode::turnkey:
             rendered = spratforge::pipeline::Pipeline{}.run(*options.input_path, options.output_path, error);
             break;
+        case spratforge::cli::Mode::generate:
+        case spratforge::cli::Mode::rig_validate:
+        case spratforge::cli::Mode::audit:
+            return 2;
     }
     if (!rendered) {
         std::cerr << error << '\n';

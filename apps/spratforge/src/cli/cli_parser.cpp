@@ -2,12 +2,43 @@
 
 #include <charconv>
 #include <string_view>
+#include <set>
 
 #include <spratforge/ai/ai_motion_core.hpp>
 #include <spratforge/atlas/atlas_core.hpp>
 
 namespace spratforge::cli {
 namespace {
+ParseResult parse_command(int argc, char* argv[]) {
+    Options options{};
+    const std::string command = argv[1];
+    options.mode = command == "generate" ? Mode::generate : command == "rig-validate" ? Mode::rig_validate : Mode::audit;
+    std::set<std::string> allowed{"--out", "--rig-profile"};
+    if (options.mode == Mode::rig_validate) allowed.insert({"--rig", "--rig-override"});
+    else allowed.insert({"--input", "--rig", "--palette-profile", "--export-profile"});
+    if (options.mode == Mode::generate) allowed.insert({"--motion-dir", "--rig-override", "--variant"});
+    std::set<std::string> seen;
+    for (int index = 2; index < argc; ++index) {
+        const std::string argument = argv[index];
+        if (!allowed.count(argument)) return {.error = "Unsupported option for " + command + ": " + argument};
+        if (!seen.insert(argument).second) return {.error = "Duplicate option: " + argument};
+        if (++index >= argc || std::string_view(argv[index]).starts_with("--") || std::string_view(argv[index]).empty()) return {.error = "Missing value for " + argument};
+        const std::string value = argv[index];
+        if (argument == "--input") options.input_path = value;
+        else if (argument == "--out") options.output_path = value;
+        else if (argument == "--rig") options.profiles.rig_file = value;
+        else if (argument == "--rig-override") options.profiles.rig_override = value;
+        else if (argument == "--rig-profile") options.profiles.rig = value;
+        else if (argument == "--motion-dir") options.profiles.motion_directory = value;
+        else if (argument == "--palette-profile") options.profiles.palette = value;
+        else if (argument == "--export-profile") options.profiles.export_profile = value;
+        else if (argument == "--variant") options.profiles.variant = value;
+    }
+    if (options.mode == Mode::rig_validate && options.profiles.rig_file.empty()) return {.error = "rig-validate requires --rig"};
+    if (options.mode != Mode::rig_validate && !options.input_path) return {.error = command + " requires --input"};
+    if (options.mode == Mode::generate && options.output_path.empty()) return {.error = "generate requires --out"};
+    return {.options = std::move(options)};
+}
 
 std::optional<Mode> parse_mode(std::string_view value) {
     if (value == "single") return Mode::single;
@@ -27,6 +58,7 @@ std::optional<int> parse_nonnegative_int(std::string_view value) {
 }  // namespace
 
 ParseResult parse_arguments(int argc, char* argv[]) {
+    if (argc > 1 && (std::string_view(argv[1]) == "generate" || std::string_view(argv[1]) == "rig-validate" || std::string_view(argv[1]) == "audit")) return parse_command(argc, argv);
     Options options{};
     bool has_mode = false;
     bool has_output = false;
@@ -113,7 +145,13 @@ ParseResult parse_arguments(int argc, char* argv[]) {
 }
 
 std::string usage() {
-        return "Usage: spratforge_cli --turnkey <input.png> --out <output-directory> | --mode <single|profile|atlas|ai-motion> --out <path> "
+    return "Usage: spratforge_cli generate --input <png> --out <empty-directory> "
+        "[--rig <json>] [--rig-profile <json>] [--rig-override <json>] [--motion-dir <directory>] "
+        "[--palette-profile <json>] [--variant <name>] [--export-profile <json>]\n"
+        "spratforge_cli rig-validate --rig <json> [--rig-profile <json>] [--rig-override <json>] [--out <report.json>]\n"
+        "spratforge_cli audit --input <png-or-output-directory> [--rig <json>] [--rig-profile <json>] "
+        "[--palette-profile <json>] [--export-profile <json>] [--out <report.json>]\n"
+        "spratforge_cli --turnkey <input.png> --out <output-directory> | --mode <single|profile|atlas|ai-motion> --out <path> "
             "[--input <png>] [--grid <width>x<height>] [--profile <name>] [--atlas <columns>x<rows>] [--padding <pixels>] "
             "[--palette <nes|gb|strict>] [--dither] [--motion <x,y>] [--verbose]";
 }

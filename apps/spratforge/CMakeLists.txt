@@ -63,6 +63,7 @@ endif()
 
 add_library(spratforge_core
     src/ai/ai_motion_core.cpp
+    src/audit/audit_core.cpp
     src/anchor/anchor_core.cpp
     src/atlas/atlas_core.cpp
     src/core/palette_core.cpp
@@ -72,6 +73,7 @@ add_library(spratforge_core
     src/motion/pose_renderer.cpp
     src/pipeline/pipeline_core.cpp
     src/profiles/profile_loader.cpp
+    src/profiles/generation_profiles.cpp
     src/rig/pixel_rig.cpp
     src/rig/segmentation.cpp
     src/rig/rig_validator.cpp
@@ -113,4 +115,11 @@ if(BUILD_TESTING)
     add_spratforge_test(test_pipeline)
     add_spratforge_test(test_rig)
     add_spratforge_test(test_pose_renderer)
+    add_spratforge_test(test_cli_generate)
+    add_spratforge_test(test_cli_rig_validate)
+    add_spratforge_test(test_cli_audit)
+    foreach(_cli_test IN ITEMS test_cli_generate test_cli_rig_validate test_cli_audit)
+        target_compile_definitions(${_cli_test} PRIVATE SPRATFORGE_CLI_PATH="$<TARGET_FILE:spratforge_cli>")
+        add_dependencies(${_cli_test} spratforge_cli)
+    endforeach()
 endif()

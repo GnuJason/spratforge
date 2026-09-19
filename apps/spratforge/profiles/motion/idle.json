@@ -1,0 +1,1 @@
+{"profile_version":1,"name":"idle","frames":6,"fps":8,"loop":true,"keyframes":[{"time":0,"transforms":[]},{"time":500,"interpolation":"ease_in_out","transforms":[{"joint":"torso","dy":-1}]},{"time":1000,"transforms":[]}]}

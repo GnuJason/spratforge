@@ -7,6 +7,14 @@
 #include <json/json.hpp>
 
 namespace spratforge::manifest {
+nlohmann::json generate_manifest(const nlohmann::json& atlas_metadata, const std::string& atlas_reference) {
+    auto document = atlas_metadata;
+    document["atlas_reference"] = atlas_reference;
+    document["rig_reference"] = "rig.json";
+    document["anchor_reference"] = "anchor.json";
+    document["hitbox_space"] = "pivot_relative";
+    return document;
+}
 Manifest generate_manifest(const anchor::AnchorData& anchor, const std::vector<templates::AnimationTemplate>& templates,
                            const std::string& palette_name) {
     Manifest result{.anchor = anchor, .palette_name = palette_name};

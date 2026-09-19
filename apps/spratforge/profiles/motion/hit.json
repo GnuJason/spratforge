@@ -1,0 +1,1 @@
+{"profile_version":1,"name":"hit","frames":4,"fps":12,"loop":false,"keyframes":[{"time":0,"transforms":[]},{"time":400,"transforms":[{"joint":"torso","dx":-3},{"joint":"head","rotation":-15}]},{"time":1000,"transforms":[]}]}

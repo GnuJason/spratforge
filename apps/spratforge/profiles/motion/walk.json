@@ -1,0 +1,1 @@
+{"profile_version":1,"name":"walk","frames":8,"fps":10,"loop":true,"keyframes":[{"time":0,"transforms":[{"joint":"left_hip","dy":-2},{"joint":"right_shoulder","rotation":15}]},{"time":500,"transforms":[{"joint":"right_hip","dy":-2},{"joint":"left_shoulder","rotation":-15}]},{"time":1000,"transforms":[{"joint":"left_hip","dy":-2},{"joint":"right_shoulder","rotation":15}]}]}

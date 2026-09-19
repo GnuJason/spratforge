@@ -1,0 +1,1 @@
+{"profile_version":1,"name":"boxer_source","allowed_colors":[],"locks":[[0,0,0]],"roles":{"skin":["head","left_arm","right_arm","left_forearm","right_forearm"],"gloves":["left_glove","right_glove"],"trunks":["torso"]},"ramps":{"gloves":[[128,0,0],[220,32,32],[255,96,96]],"trunks":[[16,16,64],[32,32,160],[96,96,255]]},"variants_file":"variants.json","animation_styles":{}}

@@ -108,6 +108,53 @@ void save_atlas_png(const std::string& path, const AtlasResult& atlas) {
     }
 }
 
+AtlasResult build_animation_atlas(const std::vector<motion::AnimationRecord>& records,
+    const std::vector<profiles::MotionProfile>& motions, const profiles::ExportProfile& output,
+    const std::string& palette_name, const std::string& variant) {
+    if (records.empty() || records.size() != motions.size()) throw std::invalid_argument("Animation/profile count mismatch");
+    std::vector<core::Frame> frames;
+    for (std::size_t animation = 0; animation < records.size(); ++animation) {
+        if (records[animation].name != motions[animation].clip.name || records[animation].frames.size() != static_cast<std::size_t>(motions[animation].clip.frame_count) ||
+            motions[animation].durations.size() != records[animation].frames.size()) throw std::invalid_argument("Animation/profile frame mismatch");
+        for (const auto& frame : records[animation].frames) frames.push_back(frame.frame);
+    }
+    if (frames.size() > 10000 || output.columns < 1 || output.columns > 256 || output.padding < 0 || output.padding > 64) throw std::invalid_argument("Export exceeds frame/layout limits");
+    const int columns = std::min(output.columns, static_cast<int>(frames.size()));
+    const int rows = (static_cast<int>(frames.size()) + columns - 1) / columns;
+    const long long width = static_cast<long long>(columns) * frames.front().width + (columns - 1) * output.padding;
+    const long long height = static_cast<long long>(rows) * frames.front().height + (rows - 1) * output.padding;
+    if (width > 8192 || height > 8192 || width * height > 16777216) throw std::invalid_argument("Atlas exceeds pixel budget");
+    auto result = build_atlas(frames, {columns, rows, output.padding});
+    result.metadata["schema_version"] = output.schema_version;
+    result.metadata["format"] = "ringqueen";
+    result.metadata["hitbox_space"] = "pivot_relative";
+    result.metadata["image"] = output.atlas_png;
+    result.metadata["size"] = {result.width, result.height};
+    result.metadata["variant"] = variant;
+    result.metadata["animations"] = nlohmann::json::array();
+    std::size_t next = 0;
+    for (std::size_t animation = 0; animation < records.size(); ++animation) {
+        const auto& record = records[animation];
+        const auto& profile = motions[animation];
+        result.metadata["animations"].push_back({{"name", record.name}, {"first_frame", next},
+            {"frame_count", record.frames.size()}, {"fps", record.fps}, {"loop", profile.clip.loop}, {"events", profile.events}});
+        for (std::size_t index = 0; index < record.frames.size(); ++index) {
+            auto& frame = result.metadata["frames"][next++];
+            frame["pivot"] = {{"x", record.frames[index].pivot.x}, {"y", record.frames[index].pivot.y}};
+            frame["duration_ms"] = profile.durations.at(index);
+            for (auto box : profile.hitboxes) if (box.at("frame") == index) {
+                box.erase("frame");
+                if (!frame.count("hitboxes")) frame["hitboxes"] = nlohmann::json::array();
+                frame["hitboxes"].push_back(std::move(box));
+            }
+        }
+    }
+    const core::Frame atlas_frame{result.width, result.height, result.rgba};
+    result.metadata["palette"] = {{"name", palette_name}, {"colors", nlohmann::json::array()}};
+    for (const auto& color : anchor::extract_palette(atlas_frame)) result.metadata["palette"]["colors"].push_back({color.r, color.g, color.b});
+    return result;
+}
+
 void save_metadata_json(const std::string& path, const nlohmann::json& metadata) {
     if (path.empty()) throw std::runtime_error("Metadata output path is required");
     const std::filesystem::path output_path(path);

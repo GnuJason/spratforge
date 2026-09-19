@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <spratforge/anchor/anchor_core.hpp>
+#include <spratforge/audit/audit_core.hpp>
 #include <spratforge/atlas/atlas_core.hpp>
 #include <spratforge/core/renderer_core.hpp>
 #include <spratforge/manifest/manifest_core.hpp>
@@ -42,6 +43,89 @@ void validate_names(const std::vector<templates::AnimationTemplate>& registry) {
 
 Pipeline::Pipeline(PipelineConfig config) : config_(std::move(config)) {
     if (config_.template_directory.empty()) config_.template_directory = SPRATFORGE_TEMPLATE_DIR;
+}
+
+bool generate(const std::string& sprite_path, const std::string& output_directory,
+              const profiles::ProfilePaths& paths, std::string& error) {
+    try {
+        if (sprite_path.empty() || output_directory.empty()) throw std::invalid_argument("Input and output paths are required");
+        if (std::filesystem::exists(output_directory) && !std::filesystem::is_empty(output_directory)) throw std::invalid_argument("Generate requires an empty output directory");
+        const auto profiles = profiles::load_generation_profiles(paths);
+        core::Frame source;
+        if (!core::load_frame_png(sprite_path, source, error)) return false;
+        auto diagnostics = audit::validate_source(source, profiles.rig, profiles.palette);
+        if (!diagnostics.empty()) throw std::invalid_argument(rig::diagnostics_json(diagnostics).dump());
+        auto pixel_rig = paths.rig_file.empty() ? rig::build_rig(source) : rig::load_rig(paths.rig_file);
+        pixel_rig = rig::apply_overrides(pixel_rig, profiles.rig.overrides);
+        if (!paths.rig_override.empty()) pixel_rig = rig::load_rig_overrides(pixel_rig, paths.rig_override);
+        diagnostics = audit::validate_rig_profile(pixel_rig, profiles.rig);
+        if (!diagnostics.empty()) throw std::invalid_argument(rig::diagnostics_json(diagnostics).dump());
+        std::vector<motion::RenderedPose> frames;
+        std::size_t stored_pixels = 0;
+        int left = 0, top = 0, right = source.width, bottom = source.height;
+        for (const auto& animation : profiles.motions) {
+            const auto styled = profiles::apply_style(source, pixel_rig, profiles.palette, paths.variant, animation.clip.name);
+            for (int index = 0; index < animation.clip.frame_count; ++index) {
+                frames.push_back(motion::render_pose(styled, pixel_rig, motion::sample_pose(animation.clip, index)));
+                const auto& rendered = frames.back();
+                stored_pixels += rendered.frame.rgba.size() / 4;
+                left = std::min(left, rendered.origin_x); top = std::min(top, rendered.origin_y);
+                right = std::max(right, rendered.origin_x + rendered.frame.width);
+                bottom = std::max(bottom, rendered.origin_y + rendered.frame.height);
+                if (frames.size() > 10000 || stored_pixels > 16777216 ||
+                    static_cast<long long>(right - left) * (bottom - top) * static_cast<long long>(frames.size()) > 16777216) {
+                    throw std::invalid_argument("Animation set exceeds frame-buffer budget");
+                }
+            }
+        }
+        motion::align_frames(frames);
+        auto exported_anchor = anchor::extract_anchor(source);
+        const auto original_mask = exported_anchor.silhouette;
+        exported_anchor.width = frames.front().frame.width;
+        exported_anchor.height = frames.front().frame.height;
+        exported_anchor.pivot = frames.front().pivot;
+        exported_anchor.bounds.x -= frames.front().origin_x;
+        exported_anchor.bounds.y -= frames.front().origin_y;
+        exported_anchor.silhouette.assign(static_cast<std::size_t>(exported_anchor.width) * exported_anchor.height, 0);
+        for (int y = 0; y < source.height; ++y) for (int x = 0; x < source.width; ++x) {
+            exported_anchor.silhouette[static_cast<std::size_t>(y - frames.front().origin_y) * exported_anchor.width + x - frames.front().origin_x] = original_mask[static_cast<std::size_t>(y) * source.width + x];
+        }
+        std::vector<motion::AnimationRecord> records;
+        std::size_t next = 0;
+        for (const auto& animation : profiles.motions) {
+            motion::AnimationRecord record{animation.clip.name, animation.fps, {}};
+            for (int index = 0; index < animation.clip.frame_count; ++index) record.frames.push_back(std::move(frames[next++]));
+            records.push_back(std::move(record));
+        }
+        const auto atlas = atlas::build_animation_atlas(records, profiles.motions, profiles.output, profiles.palette.name, paths.variant);
+        diagnostics = audit::validate_metadata(atlas.metadata, {atlas.width, atlas.height, atlas.rgba});
+        if (!diagnostics.empty()) throw std::invalid_argument(rig::diagnostics_json(diagnostics).dump());
+        const std::filesystem::path directory(output_directory);
+        std::filesystem::create_directories(directory);
+        anchor::save_anchor_profile((directory / "anchor.json").string(), exported_anchor);
+        rig::save_rig((directory / "rig.json").string(), pixel_rig);
+        atlas::save_atlas_png((directory / profiles.output.atlas_png).string(), atlas);
+        atlas::save_metadata_json((directory / profiles.output.atlas_json).string(), atlas.metadata);
+        atlas::save_metadata_json((directory / profiles.output.manifest_json).string(), manifest::generate_manifest(atlas.metadata, profiles.output.atlas_json));
+        for (const auto& record : records) {
+            std::vector<core::Frame> sheet_frames;
+            for (std::size_t index = 0; index < record.frames.size(); ++index) {
+                const auto& frame = record.frames[index].frame;
+                if (profiles.output.write_frames) {
+                    std::ostringstream filename;
+                    filename << "frame_" << std::setw(3) << std::setfill('0') << index << ".png";
+                    if (!core::save_frame_png(frame, (directory / record.name / filename.str()).string(), error)) return false;
+                }
+                if (profiles.output.write_sheets) sheet_frames.push_back(frame);
+            }
+            if (profiles.output.write_sheets) {
+                const int columns = std::min(profiles.output.columns, static_cast<int>(sheet_frames.size()));
+                const auto sheet = atlas::build_atlas(sheet_frames, {columns, (static_cast<int>(sheet_frames.size()) + columns - 1) / columns, profiles.output.padding});
+                atlas::save_atlas_png((directory / (record.name + ".png")).string(), sheet);
+            }
+        }
+        return true;
+    } catch (const std::exception& exception) { error = exception.what(); return false; }
 }
 
 bool Pipeline::run(const std::string& sprite_path, const std::string& output_directory, std::string& error) const {
