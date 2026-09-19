@@ -14,13 +14,13 @@ During configuration, `scripts/check_spratgen_exports.cmake` verifies that sprat
 
 ### Offline Builds
 
-The monorepo is offline-first: populate `apps/spratgen` locally, then configure from the repository root:
+Populate `apps/spratgen` locally, then configure from the repository root:
 
 ```sh
 cmake -S . -B build
 ```
 
-This uses `add_subdirectory` and does not fetch from GitHub. The local spratgen project must export one of `spratgen_core`, `spratgen_static`, `spratcore`, or `spratgen`, set `jsonnet_SOURCE_DIR`, and expose `export.hpp` through the selected target's public include directories.
+Spratgen uses `add_subdirectory` and is not fetched. The local spratgen project must export one of `spratgen_core`, `spratgen_static`, `spratcore`, or `spratgen`, set `jsonnet_SOURCE_DIR`, and expose `export.hpp` through the selected target's public include directories. Phase 3's RingQueen schema validator adds a pinned Valijson dependency; offline root builds must supply `-DFETCHCONTENT_SOURCE_DIR_VALIJSON=/path/to/valijson-1.0.2`. See [rq-assets](../../libs/rq-assets/README.md).
 
 ## Roadmap
 
@@ -142,9 +142,10 @@ is bounded to 10,000 frames and 16,777,216 aggregate aligned frame pixels; the
 global atlas has the same pixel budget and an 8192-pixel dimension limit.
 I/O failures can leave partial output; use a fresh directory for retries.
 
-This is the exporter-side contract only. The shared RingQueen schema, runtime
-consumer, and asset-build integration belong to Phase 3 and are not implemented
-here. No Phase 3 compatibility claim is made by the `ringqueen` format label.
+This section describes the exporter-side contract. Phase 3's shared schema,
+runtime consumer, and validating asset-build integration are documented in
+[rq-assets](../../libs/rq-assets/README.md). Legacy metadata remains unchanged;
+RingQueen's versioned consumer requires output from `generate`.
 
 ## AI motion
 

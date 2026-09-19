@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://ringqueen.dev/schema/sprite/1.0",
+  "title": "RingQueen Sprite v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "format", "hitbox_space", "image", "size", "columns", "rows", "padding", "frames", "animations", "palette", "variant"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "format": {"const": "ringqueen"},
+    "hitbox_space": {"const": "pivot_relative"},
+    "image": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}\\.png$"},
+    "size": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 1, "maximum": 8192}},
+    "columns": {"type": "integer", "minimum": 1, "maximum": 256},
+    "rows": {"type": "integer", "minimum": 1, "maximum": 10000},
+    "padding": {"type": "integer", "minimum": 0, "maximum": 64},
+    "variant": {"$ref": "#/definitions/identifier"},
+    "palette": {
+      "type": "object", "additionalProperties": false, "required": ["name", "colors"],
+      "properties": {
+        "name": {"$ref": "#/definitions/identifier"},
+        "colors": {"type": "array", "minItems": 1, "maxItems": 65536, "uniqueItems": true,
+          "items": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "integer", "minimum": 0, "maximum": 255}}}
+      }
+    },
+    "frames": {"type": "array", "minItems": 1, "maxItems": 10000, "items": {"$ref": "#/definitions/frame"}},
+    "animations": {"type": "array", "minItems": 1, "maxItems": 10000, "items": {"$ref": "#/definitions/animation"}},
+    "atlas_reference": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}\\.json$"},
+    "rig_reference": {"const": "rig.json"},
+    "anchor_reference": {"const": "anchor.json"}
+  },
+  "dependencies": {
+    "atlas_reference": ["rig_reference", "anchor_reference"],
+    "rig_reference": ["atlas_reference", "anchor_reference"],
+    "anchor_reference": ["atlas_reference", "rig_reference"]
+  },
+  "definitions": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
+    "frame": {
+      "type": "object", "additionalProperties": false,
+      "required": ["index", "x", "y", "w", "h", "pivot", "duration_ms"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0, "maximum": 9999},
+        "x": {"type": "integer", "minimum": 0, "maximum": 8191},
+        "y": {"type": "integer", "minimum": 0, "maximum": 8191},
+        "w": {"type": "integer", "minimum": 1, "maximum": 8192},
+        "h": {"type": "integer", "minimum": 1, "maximum": 8192},
+        "pivot": {"type": "object", "additionalProperties": false, "required": ["x", "y"],
+          "properties": {"x": {"type": "integer", "minimum": 0, "maximum": 8191}, "y": {"type": "integer", "minimum": 0, "maximum": 8191}}},
+        "duration_ms": {"type": "integer", "minimum": 1, "maximum": 60000},
+        "hitboxes": {"type": "array", "items": {"$ref": "#/definitions/hitbox"}}
+      }
+    },
+    "hitbox": {
+      "type": "object", "additionalProperties": false, "required": ["x", "y", "w", "h", "kind"],
+      "properties": {
+        "x": {"type": "integer", "minimum": -4096, "maximum": 4096},
+        "y": {"type": "integer", "minimum": -4096, "maximum": 4096},
+        "w": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "h": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "kind": {"$ref": "#/definitions/identifier"}
+      }
+    },
+    "animation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "first_frame", "frame_count", "fps", "loop", "events"],
+      "properties": {
+        "name": {"$ref": "#/definitions/identifier"},
+        "first_frame": {"type": "integer", "minimum": 0, "maximum": 9999},
+        "frame_count": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "fps": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "loop": {"type": "boolean"},
+        "events": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["frame", "name"],
+          "properties": {"frame": {"type": "integer", "minimum": 0, "maximum": 999}, "name": {"$ref": "#/definitions/identifier"}}
+        }}
+      }
+    }
+  }
+}

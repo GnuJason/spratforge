@@ -1,0 +1,5 @@
+#pragma once
+
+namespace rq::assets {
+inline constexpr char sprite_schema[] = R"rq_schema(@RQ_SPRITE_SCHEMA@)rq_schema";
+}

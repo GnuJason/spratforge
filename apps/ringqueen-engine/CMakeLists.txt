@@ -1,1 +1,7 @@
-# Placeholder for the ringqueen-engine subproject.
+add_executable(ringqueen-engine src/main.cpp)
+target_link_libraries(ringqueen-engine PRIVATE rq::assets)
+target_compile_definitions(ringqueen-engine PRIVATE RQ_DEFAULT_MANIFEST="${RQ_GENERATED_MANIFEST}")
+add_dependencies(ringqueen-engine rq_validate_assets)
+if(BUILD_TESTING)
+	add_test(NAME test_ringqueen_load COMMAND ringqueen-engine "${RQ_GENERATED_MANIFEST}")
+endif()
