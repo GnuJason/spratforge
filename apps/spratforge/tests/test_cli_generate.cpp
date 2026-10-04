@@ -14,7 +14,7 @@ void check(bool condition, const char* message) { if (!condition) throw std::run
 int main() {
     try {
         const auto profiles = spratforge::profiles::load_generation_profiles({});
-        check(profiles.motions.size() == 7, "Expected seven motion profiles");
+        check(profiles.motions.size() == 8, "Expected eight motion profiles (knockdown added in Phase 4A)");
         for (const auto& profile : profiles.motions) {
             check(profile.durations.size() == static_cast<std::size_t>(profile.clip.frame_count), "Duration count mismatch");
             for (int frame = 0; frame < profile.clip.frame_count; ++frame) (void)spratforge::motion::sample_pose(profile.clip, frame);
@@ -41,7 +41,7 @@ int main() {
         const auto audit = spratforge::audit::audit_path((directory / "out").string(), {});
         check(audit.at("valid").get<bool>(), audit.dump().c_str());
         const auto atlas = spratforge::profiles::read_json((directory / "out/atlas.json").string());
-        check(atlas.at("frames").size() == 45 && atlas.at("animations").size() == 7, "Profile generation count mismatch");
+        check(atlas.at("frames").size() == 51 && atlas.at("animations").size() == 8, "Profile generation count mismatch");
         std::filesystem::remove_all(directory);
         cli_test::Workspace workspace("generate");
         const auto input = workspace.save_source();

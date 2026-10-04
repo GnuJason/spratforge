@@ -9,7 +9,7 @@
 #include <stdexcept>
 
 #include <pose_model.hpp>
-#include <renderer.hpp>
+
 
 namespace spratforge::motion {
 namespace {
@@ -217,6 +217,9 @@ RenderedPose render_pose(const core::Frame& source, const rig::RigDefinition& ri
         }
         return false;
     };
+    const auto layer_index_of = [](const std::vector<Layer>& all, const Layer& layer) {
+        return static_cast<int>(&layer - all.data());
+    };
     const auto destination = [&](const Layer& layer, int x, int y) {
         auto point = mapped(layer.linear, x, y);
         point.x += layer.shift.x; point.y += layer.shift.y;
@@ -254,28 +257,50 @@ RenderedPose render_pose(const core::Frame& source, const rig::RigDefinition& ri
                    ownership[pixel] > ownership[adjacent] ? pixel : adjacent);
         }
     }
-    for (std::size_t layer_index = 0; layer_index < layers.size(); ++layer_index) {
-        const auto& layer = layers[layer_index];
-        spratgen::Image image{width, height, std::vector<spratgen::Color>(static_cast<std::size_t>(width) * height, {0,0,0,0})};
-        spratgen::Silhouette silhouette{width, height, std::vector<std::uint8_t>(image.pixels.size(), 0),
-                                       std::vector<std::uint8_t>(image.pixels.size(), 0)};
-        const auto copy_pixel = [&](int destination_x, int destination_y, std::size_t source_pixel, bool replace) {
-            const auto target_pixel = pixel_index(destination_x - bounds.left, destination_y - bounds.top, width);
-            if (!replace && silhouette.mask[target_pixel]) return;
-            image.pixels[target_pixel] = {source.rgba[source_pixel * 4], source.rgba[source_pixel * 4 + 1],
-                                        source.rgba[source_pixel * 4 + 2], source.rgba[source_pixel * 4 + 3]};
-            silhouette.mask[target_pixel] = 1;
-        };
+    // ---------------------------------------------------------------------
+    // Layer compositing.
+    //
+    // PHASE 4A FIX (double transform): this loop used to (1) warp the layer
+    // with its own inverse-mapped affine pass into a scratch image, then
+    // (2) rebuild a skeleton FROM THAT ALREADY-WARPED image and hand it to
+    // spratgen::PixelRenderer::renderFrame(), whose drawBody/drawOutline push
+    // every pixel through transform_pixel() a SECOND time. The result was a
+    // forward-scattered re-warp on top of a correct backward warp, which
+    // re-introduced the tearing and holes the backward pass exists to avoid,
+    // and forced spratgen's hardcoded boxer palette onto arbitrary art.
+    //
+    // The layer transform is now applied exactly once: `layer.shift` is folded
+    // into this pass's destination mapping (so the inverse pass walks the
+    // final, shifted destination rectangle) and the layer is composited
+    // straight into the result frame.
+    std::vector<std::uint8_t> layer_mask(static_cast<std::size_t>(width) * height, 0);
+    for (const auto& layer : layers) {
+        std::fill(layer_mask.begin(), layer_mask.end(), static_cast<std::uint8_t>(0));
         const auto& matrix = layer.linear;
         const auto determinant = matrix.xx * matrix.yy - matrix.xy * matrix.yx;
-        for (int y = layer.bounds.top; y <= layer.bounds.bottom; ++y) for (int x = layer.bounds.left; x <= layer.bounds.right; ++x) {
-            const auto translated_x = unit * x - matrix.tx, translated_y = unit * y - matrix.ty;
+        if (!determinant) continue;
+        const auto copy_pixel = [&](int destination_x, int destination_y, std::size_t source_pixel, bool replace) {
+            const int canvas_x = destination_x - bounds.left, canvas_y = destination_y - bounds.top;
+            if (canvas_x < 0 || canvas_y < 0 || canvas_x >= width || canvas_y >= height) return;
+            const auto target_pixel = pixel_index(canvas_x, canvas_y, width);
+            if (!replace && layer_mask[target_pixel]) return;
+            if (!source.rgba[source_pixel * 4 + 3]) return;
+            std::copy_n(source.rgba.begin() + static_cast<std::ptrdiff_t>(source_pixel * 4), 4,
+                        result.frame.rgba.begin() + static_cast<std::ptrdiff_t>(target_pixel * 4));
+            layer_mask[target_pixel] = 1;
+        };
+        // Backward pass over the SHIFTED destination rectangle. Every
+        // destination pixel is visited exactly once, so this cannot tear.
+        for (int y = layer.bounds.top + layer.shift.y; y <= layer.bounds.bottom + layer.shift.y; ++y)
+        for (int x = layer.bounds.left + layer.shift.x; x <= layer.bounds.right + layer.shift.x; ++x) {
+            const auto translated_x = unit * (x - layer.shift.x) - matrix.tx;
+            const auto translated_y = unit * (y - layer.shift.y) - matrix.ty;
             const int source_x = rounded(matrix.yy * translated_x - matrix.xy * translated_y, determinant);
             const int source_y = rounded(matrix.xx * translated_y - matrix.yx * translated_x, determinant);
             if (source_x < 0 || source_x >= rig.width || source_y < 0 || source_y >= rig.height) continue;
             auto pixel = pixel_index(source_x, source_y, rig.width);
             if (!layer.region->pixels[pixel]) {
-                if (ownership[pixel] <= static_cast<int>(layer_index)) continue;
+                if (ownership[pixel] <= layer_index_of(layers, layer)) continue;
                 bool repaired = false;
                 for (const Point neighbor : {Point{-1,0}, Point{1,0}, Point{0,-1}, Point{0,1}}) {
                     const int neighbor_x = source_x + neighbor.x, neighbor_y = source_y + neighbor.y;
@@ -287,21 +312,13 @@ RenderedPose render_pose(const core::Frame& source, const rig::RigDefinition& ri
             }
             copy_pixel(x, y, pixel, true);
         }
+        // Forward pass closes the sub-pixel gaps the backward pass can leave
+        // when a layer is magnified; it never overwrites a backward-pass pixel.
         for (int y = 0; y < rig.height; ++y) for (int x = 0; x < rig.width; ++x) {
             const auto pixel = pixel_index(x, y, rig.width);
             if (!layer.region->pixels[pixel]) continue;
-            const auto destination = mapped(matrix, x, y);
-            copy_pixel(destination.x, destination.y, pixel, false);
-        }
-        const auto skeleton = spratgen::SkeletonBuilder{}.build(silhouette);
-        const auto shifted = [&](const spratgen::Joint& joint) { return spratgen::PoseJoint{joint.x + layer.shift.x, joint.y + layer.shift.y}; };
-        const spratgen::PoseSkeleton posed{shifted(skeleton.head), shifted(skeleton.torso), shifted(skeleton.left_arm),
-            shifted(skeleton.right_arm), shifted(skeleton.left_leg), shifted(skeleton.right_leg)};
-        const auto rendered = spratgen::PixelRenderer{}.renderFrame(image, silhouette, posed, spratgen::makeBoxerPalette());
-        for (std::size_t pixel = 0; pixel < image.pixels.size(); ++pixel) {
-            if (!rendered.rgba[pixel * 4 + 3]) continue;
-            std::copy_n(rendered.rgba.begin() + static_cast<std::ptrdiff_t>(pixel * 4), 4,
-                        result.frame.rgba.begin() + static_cast<std::ptrdiff_t>(pixel * 4));
+            const auto target = destination(layer, x, y);
+            copy_pixel(target.x, target.y, pixel, false);
         }
     }
     return result;

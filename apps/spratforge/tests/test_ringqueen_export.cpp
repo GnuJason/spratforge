@@ -46,8 +46,11 @@ int main(int argc, char** argv) {
         const auto output = workspace.directory / "generated";
         check(workspace.run({"generate", "--input", (fixtures / "neutral_boxer.png").string(), "--out", output.string()}) == 0, "Neutral boxer generation failed");
         auto asset = rq::assets::SpriteAsset::load(output / "manifest.json");
-        check(asset.animations().size() == 7 && asset.frames().size() == 45, "Full animation set not loaded");
-        for (const auto* name : {"idle", "walk", "jab", "block", "hit", "ko", "specials"}) {
+        check(asset.animations().size() == 8 && asset.frames().size() == 51, "Full animation set not loaded");
+        // knockdown is a separate, non-looping animation; it must not collapse onto ko.
+        check(asset.animation("knockdown").frame_count != asset.animation("ko").frame_count, "knockdown must differ from ko");
+        check(!asset.animation("knockdown").loop && !asset.animation("ko").loop, "Downed animations must not loop");
+        for (const auto* name : {"idle", "walk", "jab", "block", "hit", "knockdown", "ko", "specials"}) {
             const auto& animation = asset.animation(name);
             std::uint64_t elapsed = 0;
             for (std::size_t index = animation.first_frame; index < animation.first_frame + animation.frame_count; ++index) {

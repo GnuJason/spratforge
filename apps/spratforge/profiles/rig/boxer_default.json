@@ -1,1 +1,1 @@
-{"profile_version":1,"max_width":256,"max_height":256,"max_colors":256,"min_confidence":0,"require_transparency":true,"required_regions":["head","torso"],"overrides":{}}
+{"profile_version":1,"max_width":4096,"max_height":4096,"max_colors":65536,"min_confidence":0,"require_transparency":true,"required_regions":["head","torso"],"overrides":{}}

@@ -17,10 +17,22 @@ ParseResult parse_command(int argc, char* argv[]) {
     if (options.mode == Mode::rig_validate) allowed.insert({"--rig", "--rig-override"});
     else allowed.insert({"--input", "--rig", "--palette-profile", "--export-profile"});
     if (options.mode == Mode::generate) allowed.insert({"--motion-dir", "--rig-override", "--variant"});
+    const std::set<std::string> bare_flags{"--force", "--clean", "--quiet", "--verbose"};
     std::set<std::string> seen;
     for (int index = 2; index < argc; ++index) {
         const std::string argument = argv[index];
-        if (!allowed.count(argument)) return {.error = "Unsupported option for " + command + ": " + argument};
+        if (bare_flags.count(argument)) {
+            if (!seen.insert(argument).second) return {.error = "Duplicate option: " + argument};
+            if (argument == "--force") options.output_policy = core::OutputPolicy::Force;
+            else if (argument == "--clean") options.output_policy = core::OutputPolicy::Clean;
+            else if (argument == "--quiet") options.quiet = true;
+            else options.verbose = true;
+            continue;
+        }
+        if (!allowed.count(argument)) {
+            return {.error = "Unsupported option for " + command + ": " + argument +
+                             "  (see: spratforge_cli " + command + " --help)"};
+        }
         if (!seen.insert(argument).second) return {.error = "Duplicate option: " + argument};
         if (++index >= argc || std::string_view(argv[index]).starts_with("--") || std::string_view(argv[index]).empty()) return {.error = "Missing value for " + argument};
         const std::string value = argv[index];
@@ -40,6 +52,88 @@ ParseResult parse_command(int argc, char* argv[]) {
     return {.options = std::move(options)};
 }
 
+std::optional<int> parse_nonnegative_int(std::string_view value) {
+    int parsed = 0;
+    const auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    if (result.ec != std::errc{} || result.ptr != value.data() + value.size() || parsed < 0) return std::nullopt;
+    return parsed;
+}
+
+// `forge`: single-sprite -> full animation set. Flag driven, no profile files.
+ParseResult parse_forge(int argc, char* argv[]) {
+    Options options{};
+    options.mode = Mode::forge;
+    const std::set<std::string> value_flags{"--input",  "--out",   "--character",       "--rig-override",
+                                            "--fps",    "--scale", "--alpha-threshold", "--margin",
+                                            "--only",   "--supersample", "--seed"};
+    const std::set<std::string> bare_flags{"--no-sheets",      "--no-debug", "--force",
+                                           "--clean",          "--quiet",    "--verbose",
+                                           "--list-animations", "--soft-edges", "--no-cleanup"};
+    std::set<std::string> seen;
+    for (int index = 2; index < argc; ++index) {
+        const std::string argument = argv[index];
+        if (bare_flags.count(argument)) {
+            if (!seen.insert(argument).second) return {.error = "Duplicate option: " + argument};
+            if (argument == "--no-sheets") options.forge.no_sheets = true;
+            else if (argument == "--no-debug") options.forge.no_debug = true;
+            else if (argument == "--soft-edges") options.forge.soft_edges = true;
+            else if (argument == "--no-cleanup") options.forge.no_cleanup = true;
+            else if (argument == "--list-animations") options.forge.list_animations = true;
+            else if (argument == "--quiet") options.quiet = true;
+            else if (argument == "--verbose") options.verbose = true;
+            else if (argument == "--force") options.output_policy = core::OutputPolicy::Force;
+            else if (argument == "--clean") options.output_policy = core::OutputPolicy::Clean;
+            continue;
+        }
+        if (!value_flags.count(argument)) return {.error = "Unsupported option for forge: " + argument};
+        if (!seen.insert(argument).second) return {.error = "Duplicate option: " + argument};
+        if (++index >= argc || std::string_view(argv[index]).starts_with("--") || std::string_view(argv[index]).empty())
+            return {.error = "Missing value for " + argument};
+        const std::string value = argv[index];
+        if (argument == "--input") options.input_path = value;
+        else if (argument == "--out") options.output_path = value;
+        else if (argument == "--character") options.forge.character = value;
+        else if (argument == "--rig-override") options.forge.rig_override = value;
+        else if (argument == "--only") {
+            // Comma separated, order-insensitive; emission order stays the
+            // clip library's own order so --only never reshuffles frames.
+            std::string current;
+            for (const char c : value + ",") {
+                if (c == ',') {
+                    if (!current.empty()) options.forge.only.push_back(current);
+                    current.clear();
+                } else if (c != ' ') {
+                    current.push_back(c);
+                }
+            }
+            if (options.forge.only.empty()) return {.error = "--only requires at least one animation name"};
+        }
+        else {
+            const auto parsed = parse_nonnegative_int(value);
+            if (!parsed) return {.error = "Invalid integer for " + argument + ": " + value};
+            if (argument == "--fps") options.forge.fps = *parsed;
+            else if (argument == "--scale") options.forge.scale = *parsed;
+            else if (argument == "--alpha-threshold") options.forge.alpha_threshold = *parsed;
+            else if (argument == "--margin") options.forge.margin = *parsed;
+            else if (argument == "--supersample") {
+                if (*parsed < 1 || *parsed > 8) return {.error = "--supersample must be between 1 and 8"};
+                options.forge.supersample = *parsed;
+            }
+            else options.forge.seed = static_cast<unsigned int>(*parsed);
+        }
+    }
+    if (options.quiet && options.verbose) return {.error = "--quiet and --verbose are mutually exclusive"};
+    // --list-animations is informational: it needs neither input nor output.
+    if (options.forge.list_animations) return {.options = std::move(options)};
+    if (!options.input_path) {
+        return {.error = "forge requires --input <neutral-sprite.png>  (see: spratforge_cli forge --help)"};
+    }
+    if (options.output_path.empty()) {
+        return {.error = "forge requires --out <directory>  (see: spratforge_cli forge --help)"};
+    }
+    return {.options = std::move(options)};
+}
+
 std::optional<Mode> parse_mode(std::string_view value) {
     if (value == "single") return Mode::single;
     if (value == "profile") return Mode::profile;
@@ -48,16 +142,10 @@ std::optional<Mode> parse_mode(std::string_view value) {
     return std::nullopt;
 }
 
-std::optional<int> parse_nonnegative_int(std::string_view value) {
-    int parsed = 0;
-    const auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
-    if (result.ec != std::errc{} || result.ptr != value.data() + value.size() || parsed < 0) return std::nullopt;
-    return parsed;
-}
-
 }  // namespace
 
 ParseResult parse_arguments(int argc, char* argv[]) {
+    if (argc > 1 && std::string_view(argv[1]) == "forge") return parse_forge(argc, argv);
     if (argc > 1 && (std::string_view(argv[1]) == "generate" || std::string_view(argv[1]) == "rig-validate" || std::string_view(argv[1]) == "audit")) return parse_command(argc, argv);
     Options options{};
     bool has_mode = false;
@@ -144,16 +232,169 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     return {.options = std::move(options)};
 }
 
+namespace {
+
+const char* kForgeHelp =
+    "spratforge forge - turn ONE neutral sprite into a complete animation set.\n"
+    "\n"
+    "Usage:\n"
+    "  spratforge_cli forge --input <sprite.png> --out <directory> [options]\n"
+    "  spratforge_cli forge --list-animations\n"
+    "\n"
+    "Required:\n"
+    "  --input <png>            Neutral, front-facing source sprite (32..2048 px per\n"
+    "                           side, non-square is fine).\n"
+    "  --out <directory>        Output directory. Refuses to write into a non-empty\n"
+    "                           directory unless --force or --clean is given.\n"
+    "\n"
+    "Output policy:\n"
+    "  --force                  Write over the directory; never deletes anything.\n"
+    "  --clean                  Delete only the files recorded in this directory's\n"
+    "                           .spratforge-manifest.json from a previous run, then\n"
+    "                           write. Files spratforge did not create are never\n"
+    "                           touched, and the run still refuses if any remain.\n"
+    "\n"
+    "Selection:\n"
+    "  --list-animations        Print the clip library (name, frames, fps, flags).\n"
+    "  --only <a,b,c>           Emit only these animations. Emission order always\n"
+    "                           follows the library order.\n"
+    "\n"
+    "Appearance:\n"
+    "  --character <name>       Character id written into metadata (default: boxer).\n"
+    "  --rig-override <json>    Hand-authored joint positions layered over the\n"
+    "                           estimated rig.\n"
+    "  --scale <1-16>           Integer nearest-neighbour magnification (default: 1).\n"
+    "  --alpha-threshold <1-255> Silhouette cut-off (default: 16).\n"
+    "  --margin <0-256>         Extra canvas padding in source pixels (default: 2).\n"
+    "  --fps <1-240>            Override every clip's frame rate.\n"
+    "  --supersample <1-8>      Sub-samples per destination axis (default: 3).\n"
+    "                           1 reproduces the legacy nearest-neighbour look.\n"
+    "  --soft-edges             Premultiplied-alpha soft edges instead of the\n"
+    "                           palette-preserving hard edges (adds new colours).\n"
+    "  --no-cleanup             Disable pinhole filling and despeckling.\n"
+    "  --no-sheets              Skip the per-animation strip sheets.\n"
+    "  --no-debug               Skip rig_debug.png.\n"
+    "  --seed <n>               Reserved. The pipeline has no RNG, so this cannot\n"
+    "                           change the output; it is recorded in metadata.json.\n"
+    "\n"
+    "Reporting:\n"
+    "  --quiet                  Suppress the JSON run summary (errors still print).\n"
+    "  --verbose                Also list every written file in the summary.\n"
+    "  --help, -h               This help.\n"
+    "\n"
+    "Examples:\n"
+    "  # Full set from the RingQueen master sprite\n"
+    "  spratforge_cli forge --input assets/master_boxer.png --out build/boxer\n"
+    "\n"
+    "  # Re-run into the same directory, removing only what the last run wrote\n"
+    "  spratforge_cli forge --input assets/master_boxer.png --out build/boxer --clean\n"
+    "\n"
+    "  # Just the four directional walks, 2x magnified, quietly\n"
+    "  spratforge_cli forge --input assets/master_boxer.png --out build/walks \\\n"
+    "      --only walk_left,walk_right,walk_up,walk_down --scale 2 --quiet\n"
+    "\n"
+    "Exit codes: 0 ok, 2 bad arguments, 5 run failed.\n";
+
+const char* kGenerateHelp =
+    "spratforge generate - profile-driven pipeline (legacy, profile JSON required).\n"
+    "\n"
+    "Usage:\n"
+    "  spratforge_cli generate --input <png> --out <directory> [options]\n"
+    "\n"
+    "Options:\n"
+    "  --input <png>            Source sprite.\n"
+    "  --out <directory>        Output directory (same policy as forge).\n"
+    "  --force | --clean        Non-empty output directory policy; see forge --help.\n"
+    "  --rig <json>             Rig definition.\n"
+    "  --rig-profile <json>     Rig limits profile.\n"
+    "  --rig-override <json>    Rig overrides.\n"
+    "  --motion-dir <directory> Motion template directory.\n"
+    "  --palette-profile <json> Palette profile.\n"
+    "  --variant <name>         Palette variant.\n"
+    "  --export-profile <json>  Export profile.\n"
+    "  --quiet | --verbose      Reporting level.\n"
+    "\n"
+    "Examples:\n"
+    "  spratforge_cli generate --input art/boxer.png --out build/boxer \\\n"
+    "      --rig profiles/rig/boxer_default.json --clean\n"
+    "\n"
+    "Exit codes: 0 ok, 2 bad arguments, 5 run failed.\n";
+
+const char* kRigValidateHelp =
+    "spratforge rig-validate - validate a rig JSON against a rig profile.\n"
+    "\n"
+    "Usage:\n"
+    "  spratforge_cli rig-validate --rig <json> [--rig-profile <json>]\n"
+    "                              [--rig-override <json>] [--out <report.json>]\n"
+    "\n"
+    "Examples:\n"
+    "  spratforge_cli rig-validate --rig profiles/rig/boxer_default.json\n"
+    "\n"
+    "Exit codes: 0 valid, 2 bad arguments, 5 invalid rig.\n";
+
+const char* kAuditHelp =
+    "spratforge audit - audit a sprite or a generated output directory.\n"
+    "\n"
+    "Usage:\n"
+    "  spratforge_cli audit --input <png-or-directory> [--rig <json>]\n"
+    "                       [--rig-profile <json>] [--palette-profile <json>]\n"
+    "                       [--export-profile <json>] [--out <report.json>]\n"
+    "\n"
+    "Examples:\n"
+    "  spratforge_cli audit --input build/boxer\n"
+    "\n"
+    "Exit codes: 0 clean, 2 bad arguments, 5 findings reported.\n";
+
+const char* kLegacyHelp =
+    "spratforge legacy render modes.\n"
+    "\n"
+    "Usage:\n"
+    "  spratforge_cli --turnkey <input.png> --out <directory>\n"
+    "  spratforge_cli --mode <single|profile|atlas|ai-motion> --out <path>\n"
+    "                 [--input <png>] [--grid <w>x<h>] [--profile <name>]\n"
+    "                 [--atlas <cols>x<rows>] [--padding <px>]\n"
+    "                 [--palette <nes|gb|strict>] [--dither] [--motion <x,y>]\n"
+    "                 [--verbose]\n"
+    "\n"
+    "Prefer `forge` for new work; these modes are kept for existing scripts.\n";
+
+}  // namespace
+
+std::string version_string() {
+    return std::string("spratforge ") + SPRATFORGE_VERSION;
+}
+
+std::string usage_for(const std::string& subcommand) {
+    if (subcommand == "forge") return kForgeHelp;
+    if (subcommand == "generate") return kGenerateHelp;
+    if (subcommand == "rig-validate") return kRigValidateHelp;
+    if (subcommand == "audit") return kAuditHelp;
+    if (subcommand == "legacy") return kLegacyHelp;
+    return usage();
+}
+
 std::string usage() {
-    return "Usage: spratforge_cli generate --input <png> --out <empty-directory> "
-        "[--rig <json>] [--rig-profile <json>] [--rig-override <json>] [--motion-dir <directory>] "
-        "[--palette-profile <json>] [--variant <name>] [--export-profile <json>]\n"
-        "spratforge_cli rig-validate --rig <json> [--rig-profile <json>] [--rig-override <json>] [--out <report.json>]\n"
-        "spratforge_cli audit --input <png-or-output-directory> [--rig <json>] [--rig-profile <json>] "
-        "[--palette-profile <json>] [--export-profile <json>] [--out <report.json>]\n"
-        "spratforge_cli --turnkey <input.png> --out <output-directory> | --mode <single|profile|atlas|ai-motion> --out <path> "
-            "[--input <png>] [--grid <width>x<height>] [--profile <name>] [--atlas <columns>x<rows>] [--padding <pixels>] "
-            "[--palette <nes|gb|strict>] [--dither] [--motion <x,y>] [--verbose]";
+    return std::string(
+        "spratforge - deterministic sprite animation forge.\n"
+        "\n"
+        "Usage: spratforge_cli <subcommand> [options]\n"
+        "\n"
+        "Subcommands:\n"
+        "  forge         One neutral sprite -> a full, game-ready animation set.\n"
+        "  generate      Profile-driven pipeline (legacy).\n"
+        "  rig-validate  Validate a rig JSON against a rig profile.\n"
+        "  audit         Audit a sprite or a generated output directory.\n"
+        "  legacy        Single/profile/atlas/ai-motion render modes.\n"
+        "\n"
+        "Global:\n"
+        "  --help, -h        This overview. `<subcommand> --help` for details.\n"
+        "  --version, -V     Print the version and exit.\n"
+        "\n"
+        "Quick start:\n"
+        "  spratforge_cli forge --input sprite.png --out out/ --clean\n"
+        "  spratforge_cli forge --help\n"
+        "\n"
+        "Exit codes: 0 success, 2 bad arguments, 3-4 legacy mode errors, 5 run failed.\n");
 }
 
 }  // namespace spratforge::cli

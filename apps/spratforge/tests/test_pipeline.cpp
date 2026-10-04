@@ -59,7 +59,7 @@ int main() {
         const auto manifest = read_json(output / "manifest.json");
         const auto metadata = read_json(output / "atlas.json");
         const auto atlas = read_frame(output / "atlas.png");
-        check(manifest.at("animations").size() == 10, "Expected all legacy animation names");
+        check(manifest.at("animations").size() == 11, "Expected all legacy animation names");
         const auto rig = spratforge::rig::load_rig((output / "rig.json").string());
         check(rig.silhouette == spratforge::anchor::extract_silhouette(source), "Persisted rig changed source silhouette");
         const auto palette = colors(source);

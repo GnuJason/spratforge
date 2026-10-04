@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <map>
+#include <utility>
 #include <iostream>
 #include <queue>
 #include <set>
@@ -17,6 +19,18 @@ template<class Action> void rejects(Action action) {
     bool rejected = false;
     try { action(); } catch (const std::exception&) { rejected = true; }
     check(rejected, "Invalid pose should fail");
+}
+// World-space map of every opaque pixel in a rendered pose.
+std::map<std::pair<int, int>, std::array<std::uint8_t, 4>> opaque_pixels(const spratforge::motion::RenderedPose& pose) {
+    std::map<std::pair<int, int>, std::array<std::uint8_t, 4>> result;
+    for (int y = 0; y < pose.frame.height; ++y) for (int x = 0; x < pose.frame.width; ++x) {
+        const auto offset = (static_cast<std::size_t>(y) * pose.frame.width + x) * 4;
+        if (!pose.frame.rgba[offset + 3]) continue;
+        result.emplace(std::pair<int, int>{x + pose.origin_x, y + pose.origin_y},
+                       std::array<std::uint8_t, 4>{pose.frame.rgba[offset], pose.frame.rgba[offset + 1],
+                                                   pose.frame.rgba[offset + 2], pose.frame.rgba[offset + 3]});
+    }
+    return result;
 }
 void connected(const spratforge::motion::RenderedPose& pose) {
     const auto& frame = pose.frame;
@@ -55,6 +69,65 @@ int main() {
         rig.regions.front().pixels = rig.silhouette;
         const auto neutral = spratforge::motion::render_pose(source, rig, {});
         check(neutral.frame.rgba == source.rgba, "Neutral pose must preserve exact source pixels");
+
+        // --- Phase 4A regression: the layer composite must transform ONCE. ---
+        // The old renderer warped each layer into a scratch image with its own
+        // inverse-mapped affine pass (linear part only), then rebuilt a
+        // skeleton from that already-warped silhouette and pushed the result
+        // through spratgen's PixelRenderer, whose drawBody/drawOutline scatter
+        // every pixel forward through transform_pixel() a SECOND time to apply
+        // the layer's translation. Two passes, two chances to tear: a forward
+        // scatter leaves gaps that the backward pass exists to avoid, it clips
+        // silently at the frame edge, and drawBody substitutes spratgen's
+        // hardcoded boxer palette for any masked pixel the warp left uncovered.
+        // The transform is now applied exactly once.
+        //
+        // A pure translation is the sharpest probe for the composite: it is
+        // exactly invertible, so the result must be the neutral pose moved
+        // rigidly - same pixel count, same positions, same colours.
+        {
+            const auto reference = opaque_pixels(neutral);
+            check(!reference.empty(), "Neutral pose is empty");
+            for (const auto& offset : {std::pair<int, int>{3, 0}, std::pair<int, int>{0, -2},
+                                       std::pair<int, int>{-4, 3}, std::pair<int, int>{12, 7}}) {
+                const auto moved = spratforge::motion::render_pose(
+                    source, rig, {{{"left_shoulder", offset.first, offset.second}}});
+                const auto actual = opaque_pixels(moved);
+                check(actual.size() == reference.size(),
+                      "Translation changed the opaque pixel count: a second forward transform is dropping or "
+                      "duplicating pixels");
+                for (const auto& entry : reference) {
+                    const std::pair<int, int> expected_position{entry.first.first + offset.first,
+                                                                entry.first.second + offset.second};
+                    const auto found = actual.find(expected_position);
+                    check(found != actual.end(), "Translation lost a pixel: the layer was transformed twice");
+                    check(found->second == entry.second,
+                          "Translation changed a pixel colour: the spratgen palette path is still in the composite");
+                }
+            }
+        }
+
+        // Nothing in the composite may invent a colour: with the spratgen
+        // palette path gone, every rendered pixel must come from the source.
+        {
+            std::set<std::array<std::uint8_t, 4>> source_colours{{0, 0, 0, 0}};
+            for (std::size_t index = 0; index * 4 + 3 < source.rgba.size(); ++index) {
+                source_colours.insert({source.rgba[index * 4], source.rgba[index * 4 + 1],
+                                       source.rgba[index * 4 + 2], source.rgba[index * 4 + 3]});
+            }
+            for (int angle : {0, 15, 45, 90}) for (int stretch : {100, 150, 200}) {
+                const auto probe = spratforge::motion::render_pose(
+                    source, rig, {{{"left_shoulder", 2, -1, angle, stretch, 100}}});
+                for (std::size_t index = 0; index * 4 + 3 < probe.frame.rgba.size(); ++index) {
+                    const std::array<std::uint8_t, 4> colour{
+                        probe.frame.rgba[index * 4], probe.frame.rgba[index * 4 + 1],
+                        probe.frame.rgba[index * 4 + 2], probe.frame.rgba[index * 4 + 3]};
+                    check(source_colours.count(colour) != 0,
+                          "The composite invented a colour that is not in the source sprite");
+                }
+            }
+        }
+
         const spratforge::motion::PoseDefinition pose{{{"left_shoulder", 0, 0, 90}}};
         const auto rotated = spratforge::motion::render_pose(source, rig, pose);
         for (int y = 3; y <= 5; ++y) for (int x = 3; x <= 5; ++x) {

@@ -83,9 +83,9 @@ RigProfile load_rig_profile(const std::string& path) {
     fields(document, {"profile_version", "max_width", "max_height", "max_colors", "min_confidence", "require_transparency", "required_regions", "overrides"});
     version(document);
     RigProfile result;
-    result.max_width = optional_int(document, "max_width", 256, 1, 4096);
-    result.max_height = optional_int(document, "max_height", 256, 1, 4096);
-    result.max_colors = optional_int(document, "max_colors", 256, 1, 65536);
+    result.max_width = optional_int(document, "max_width", 4096, 1, 4096);
+    result.max_height = optional_int(document, "max_height", 4096, 1, 4096);
+    result.max_colors = optional_int(document, "max_colors", 65536, 1, 65536);
     result.min_confidence = optional_int(document, "min_confidence", 0, 0, 1000);
     result.require_transparency = boolean(document, "require_transparency", true);
     result.required_regions = identifiers(document.value("required_regions", Json::array()));

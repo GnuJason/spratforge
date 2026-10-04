@@ -46,10 +46,18 @@ Pipeline::Pipeline(PipelineConfig config) : config_(std::move(config)) {
 }
 
 bool generate(const std::string& sprite_path, const std::string& output_directory,
-              const profiles::ProfilePaths& paths, std::string& error) {
+              const profiles::ProfilePaths& paths, std::string& error,
+              core::OutputPolicy policy) {
+    std::vector<std::string> written;
+    const auto record_written = [&](const std::filesystem::path& root, const std::filesystem::path& file) {
+        written.push_back(std::filesystem::relative(file, root).generic_string());
+    };
     try {
         if (sprite_path.empty() || output_directory.empty()) throw std::invalid_argument("Input and output paths are required");
-        if (std::filesystem::exists(output_directory) && !std::filesystem::is_empty(output_directory)) throw std::invalid_argument("Generate requires an empty output directory");
+        // Validate (and, under --clean, prune) the output directory up front,
+        // but do NOT create it: `generate` must not leave an empty directory
+        // behind when a later profile/motion validation step fails.
+        core::prepare_output_dir(output_directory, policy, "generate", false);
         const auto profiles = profiles::load_generation_profiles(paths);
         core::Frame source;
         if (!core::load_frame_png(sprite_path, source, error)) return false;
@@ -103,10 +111,15 @@ bool generate(const std::string& sprite_path, const std::string& output_director
         const std::filesystem::path directory(output_directory);
         std::filesystem::create_directories(directory);
         anchor::save_anchor_profile((directory / "anchor.json").string(), exported_anchor);
+        record_written(directory, directory / "anchor.json");
         rig::save_rig((directory / "rig.json").string(), pixel_rig);
+        record_written(directory, directory / "rig.json");
         atlas::save_atlas_png((directory / profiles.output.atlas_png).string(), atlas);
+        record_written(directory, directory / profiles.output.atlas_png);
         atlas::save_metadata_json((directory / profiles.output.atlas_json).string(), atlas.metadata);
+        record_written(directory, directory / profiles.output.atlas_json);
         atlas::save_metadata_json((directory / profiles.output.manifest_json).string(), manifest::generate_manifest(atlas.metadata, profiles.output.atlas_json));
+        record_written(directory, directory / profiles.output.manifest_json);
         for (const auto& record : records) {
             std::vector<core::Frame> sheet_frames;
             for (std::size_t index = 0; index < record.frames.size(); ++index) {
@@ -115,6 +128,7 @@ bool generate(const std::string& sprite_path, const std::string& output_director
                     std::ostringstream filename;
                     filename << "frame_" << std::setw(3) << std::setfill('0') << index << ".png";
                     if (!core::save_frame_png(frame, (directory / record.name / filename.str()).string(), error)) return false;
+                    record_written(directory, directory / record.name / filename.str());
                 }
                 if (profiles.output.write_sheets) sheet_frames.push_back(frame);
             }
@@ -122,8 +136,12 @@ bool generate(const std::string& sprite_path, const std::string& output_director
                 const int columns = std::min(profiles.output.columns, static_cast<int>(sheet_frames.size()));
                 const auto sheet = atlas::build_atlas(sheet_frames, {columns, (static_cast<int>(sheet_frames.size()) + columns - 1) / columns, profiles.output.padding});
                 atlas::save_atlas_png((directory / (record.name + ".png")).string(), sheet);
+                record_written(directory, directory / (record.name + ".png"));
             }
         }
+        // The manifest is the exhaustive list of paths this run owns and is
+        // the only thing a later `--clean` may delete.
+        core::write_output_manifest(output_directory, "generate", written);
         return true;
     } catch (const std::exception& exception) { error = exception.what(); return false; }
 }

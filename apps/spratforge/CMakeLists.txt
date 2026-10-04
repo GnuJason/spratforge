@@ -63,12 +63,18 @@ endif()
 
 add_library(spratforge_core
     src/ai/ai_motion_core.cpp
+    src/forge/forge_rig.cpp
+    src/forge/forge_segment.cpp
+    src/forge/forge_motion.cpp
+    src/forge/forge_synth.cpp
+    src/forge/forge_pipeline.cpp
     src/audit/audit_core.cpp
     src/anchor/anchor_core.cpp
     src/atlas/atlas_core.cpp
     src/core/palette_core.cpp
     src/core/pixel_normalizer.cpp
     src/core/renderer_core.cpp
+    src/core/output_dir.cpp
     src/manifest/manifest_core.cpp
     src/motion/pose_renderer.cpp
     src/pipeline/pipeline_core.cpp
@@ -87,6 +93,10 @@ target_compile_definitions(spratforge_core PRIVATE
     SPRATFORGE_PROFILE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/profiles"
     SPRATFORGE_TEMPLATE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/profiles/templates"
 )
+# Single source of truth for `--version`. Bumped with the pipeline, not with
+# the build, so the value stays reproducible.
+set(SPRATFORGE_VERSION "2.1.0" CACHE STRING "spratforge CLI version string")
+target_compile_definitions(spratforge_core PUBLIC SPRATFORGE_VERSION="${SPRATFORGE_VERSION}")
 target_link_libraries(spratforge_core PUBLIC spratgen::spratgen)
 if(NOT "${_spratforge_json_target}" STREQUAL "")
     target_link_libraries(spratforge_core PUBLIC ${_spratforge_json_target})
@@ -115,13 +125,18 @@ if(BUILD_TESTING)
     add_spratforge_test(test_pipeline)
     add_spratforge_test(test_rig)
     add_spratforge_test(test_pose_renderer)
+    add_spratforge_test(test_forge)
+    add_spratforge_test(test_forge_determinism)
+    add_spratforge_test(test_forge_input_sizes)
+    add_spratforge_test(test_output_policy)
     add_spratforge_test(test_cli_generate)
     add_spratforge_test(test_cli_rig_validate)
     add_spratforge_test(test_cli_audit)
+    add_spratforge_test(test_cli_forge)
     add_spratforge_test(test_ringqueen_export)
     target_link_libraries(test_ringqueen_export PRIVATE rq::assets)
     target_compile_definitions(test_ringqueen_export PRIVATE RQ_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
-    foreach(_cli_test IN ITEMS test_cli_generate test_cli_rig_validate test_cli_audit test_ringqueen_export)
+    foreach(_cli_test IN ITEMS test_cli_generate test_cli_rig_validate test_cli_audit test_ringqueen_export test_cli_forge)
         target_compile_definitions(${_cli_test} PRIVATE SPRATFORGE_CLI_PATH="$<TARGET_FILE:spratforge_cli>")
         add_dependencies(${_cli_test} spratforge_cli)
     endforeach()

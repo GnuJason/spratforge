@@ -17,9 +17,9 @@ struct ProfilePaths {
     std::string variant = "default";
 };
 struct RigProfile {
-    int max_width = 256;
-    int max_height = 256;
-    int max_colors = 256;
+    int max_width = 4096;
+    int max_height = 4096;
+    int max_colors = 65536;
     int min_confidence = 0;
     bool require_transparency = true;
     std::vector<std::string> required_regions;
